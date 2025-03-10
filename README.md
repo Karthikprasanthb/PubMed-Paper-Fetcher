@@ -1,4 +1,3 @@
-# PubMed-Paper-Fetcher
 # PubMed Paper Fetcher
 
 A Python script to fetch research papers from PubMed and export them to CSV.
