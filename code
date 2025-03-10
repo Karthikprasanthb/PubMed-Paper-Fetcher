@@ -1,0 +1,102 @@
+import requests
+import csv
+import argparse
+import time
+from typing import List, Dict
+import xml.etree.ElementTree as ET
+
+def fetch_papers(query: str) -> List[Dict]:
+    """
+    Fetch research papers from PubMed API based on the given query.
+    """
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    params = {
+        'db': 'pubmed',
+        'term': query,
+        'retmode': 'json',
+        'retmax': 100
+    }
+
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()  # Raise error if request fails
+        data = response.json()
+        paper_ids = data.get("esearchresult", {}).get("idlist", [])
+        print(f"Fetched {len(paper_ids)} papers.")
+        return fetch_paper_details(paper_ids)
+    
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching papers: {e}")
+        return []
+
+def fetch_paper_details(paper_ids: List[str]) -> List[Dict]:
+    """
+    Fetch detailed information of papers from PubMed API.
+    """
+    if not paper_ids:
+        return []
+
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    params = {
+        'db': 'pubmed',
+        'id': ','.join(paper_ids),
+        'retmode': 'xml'
+    }
+
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        return parse_paper_details(response.text)
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching details: {e}")
+        return []
+
+def parse_paper_details(xml_data: str) -> List[Dict]:
+    """
+    Parse XML data to extract required information.
+    """
+    root = ET.fromstring(xml_data)
+    results = []
+
+    for article in root.findall(".//PubmedArticle"):
+        pubmed_id = article.find(".//PMID").text if article.find(".//PMID") is not None else 'N/A'
+        title = article.find(".//ArticleTitle").text if article.find(".//ArticleTitle") is not None else 'N/A'
+        pub_date = article.find(".//PubDate/Year").text if article.find(".//PubDate/Year") is not None else 'N/A'
+
+        results.append({
+            "PubMed ID": pubmed_id,
+            "Title": title,
+            "Publication Year": pub_date
+        })
+
+    return results
+
+def save_to_csv(data: List[Dict], filename: str = "output.csv"):
+    """
+    Save the results to a CSV file.
+    """
+    if not data:
+        print("No data to save.")
+        return
+
+    keys = data[0].keys()
+    with open(filename, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(data)
+
+    print(f"Results successfully saved to {filename}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Fetch research papers from PubMed")
+    parser.add_argument("query", type=str, help="Search query for PubMed")
+    args = parser.parse_args()
+
+    print("Fetching research papers...")
+    papers = fetch_papers(args.query)
+
+    if papers:
+        save_to_csv(papers)
+    else:
+        print("No papers found.")
